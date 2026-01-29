@@ -8,64 +8,78 @@
         :root { --safety-green: #008542; --safety-yellow: #ffed00; }
         body { font-family: sans-serif; background-color: #f0f2f5; margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; text-align: center; }
         .card { width: 95%; max-width: 600px; background: white; border: 12px solid var(--safety-green); border-radius: 4px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); position: relative; }
-        .slogan { background-color: var(--safety-yellow); padding: 25px 10px; font-size: 1.8rem; font-weight: bold; border-bottom: 5px solid #000; line-height: 1.4; color: #000; }
-        .main { padding: 40px 20px; }
+        .main { padding: 60px 20px; }
         .days { font-size: 9rem; font-weight: 900; color: var(--safety-green); line-height: 1; margin: 10px 0; font-family: 'Arial Black', sans-serif; }
         .footer { background-color: #f8f9fa; padding: 20px; border-top: 1px solid #ddd; font-size: 1.2rem; }
-        /* 画面右下の隠しボタン（パスワード用） */
         .admin-btn { position: absolute; bottom: 0; right: 0; width: 60px; height: 60px; background: transparent; border: none; cursor: pointer; opacity: 0.1; }
     </style>
 </head>
 <body>
 <div class="card">
-    <div class="slogan">みんなで、さがそう危険な事<br>1人1人が責任者</div>
     <div class="main">
-        <div style="font-weight:bold; font-size:1.2rem; color:#555;">継続無事故日数</div>
-        <div class="days"><span id="days-val">0</span><small style="font-size:2rem;">日</small></div>
-        <div id="start-date" style="color: #999; margin-top: 10px; font-size: 0.9rem;">記録開始日: --</div>
+        <div style="font-weight:bold; font-size:1.5rem; color:#555; margin-bottom:10px;">継続無事故日数</div>
+        <div class="days"><span id="days-val">--</span><small style="font-size:2rem;">日</small></div>
+        <div id="start-date" style="color: #999; margin-top: 15px; font-size: 1rem;">記録開始日: 読み込み中...</div>
     </div>
-    <div class="footer">過去の最長記録: <span id="longest-val">0</span> 日</div>
+    <div class="footer">過去の最長記録: <span id="longest-val">--</span> 日</div>
     <button class="admin-btn" onclick="adminReset()"></button>
 </div>
+
 <script>
-    // パスワード設定
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbzzp3IVXjFm1XaZY3Hgl_eQxFnqvZrz7mMdarwi7_vaVML4-qTuMKDqXnZNAii8rDmP/exec";
     const PWD = "5080";
 
-    function update() {
-        let start = localStorage.getItem('safety_start');
-        let longest = localStorage.getItem('safety_longest') || 0;
-        
-        if (!start) {
-            start = new Date().toISOString();
-            localStorage.setItem('safety_start', start);
-        }
+    async function loadData() {
+        try {
+            const res = await fetch(GAS_URL);
+            const data = await res.json();
+            
+            // 日付を「yyyy/mm/dd」形式から正しく解析
+            const parts = data.startDate.split('/');
+            const startDate = new Date(parts[0], parts[1] - 1, parts[2]);
+            startDate.setHours(0, 0, 0, 0);
 
-        const diff = Math.floor((new Date() - new Date(start)) / 86400000);
-        
-        if (diff > longest) {
-            longest = diff;
-            localStorage.setItem('safety_longest', longest);
-        }
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
 
-        document.getElementById('days-val').innerText = diff;
-        document.getElementById('longest-val').innerText = longest;
-        document.getElementById('start-date').innerText = "記録開始日: " + new Date(start).toLocaleDateString();
+            // 経過日数の計算
+            const diff = Math.floor((today - startDate) / (1000 * 60 * 60 * 24));
+            
+            document.getElementById('days-val').innerText = diff;
+            document.getElementById('longest-val').innerText = data.longestRecord;
+            document.getElementById('start-date').innerText = "記録開始日: " + data.startDate;
+
+            // 最長記録の自動更新
+            if (diff > data.longestRecord) {
+                await fetch(GAS_URL, {
+                    method: "POST",
+                    body: JSON.stringify({ action: "updateLongest", value: diff, password: PWD })
+                });
+                document.getElementById('longest-val').innerText = diff;
+            }
+        } catch (e) {
+            document.getElementById('start-date').innerText = "データ読み込みエラー";
+        }
     }
 
-    function adminReset() {
+    async function adminReset() {
         const input = prompt("管理者パスワードを入力してください：");
         if (input === PWD) {
             if (confirm("事故リセットを実行します。よろしいですか？")) {
-                localStorage.setItem('safety_start', new Date().toISOString());
-                update();
-                alert("リセットしました。今日も安全に！");
+                await fetch(GAS_URL, {
+                    method: "POST",
+                    mode: "no-cors", // CORSエラー回避
+                    body: JSON.stringify({ action: "reset", password: PWD })
+                });
+                // 書き換え反映まで少し待ってリロード
+                setTimeout(() => { location.reload(); }, 500);
             }
         } else if (input !== null) {
             alert("パスワードが違います。");
         }
     }
 
-    update();
+    loadData();
 </script>
 </body>
 </html>
